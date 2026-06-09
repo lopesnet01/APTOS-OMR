@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>APTOS OMR — Correção por Câmera</title>
+<style>
+  :root {
+    --bg:#0d1117; --surface:#161b22; --border:#30363d;
+    --accent:#2563eb; --green:#16a34a; --red:#dc2626; --warn:#d97706;
+    --text:#e6edf3; --muted:#7d8590; --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;overflow-x:hidden}
+
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+  .logo{font-size:1.1rem;font-weight:700;letter-spacing:-.5px}
+  .logo span{color:var(--accent)}
+  .badge{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:.85rem;color:var(--muted)}
+  .badge b{color:var(--text)}
+
+  main{flex:1;display:flex;flex-direction:column;padding:16px;gap:14px;max-width:600px;margin:0 auto;width:100%}
+
+  .tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px}
+  .tab{flex:1;padding:8px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .15s}
+  .tab.active{background:var(--bg);color:var(--text);border:1px solid var(--border)}
+  .panel{display:none;flex-direction:column;gap:14px}
+  .panel.active{display:flex}
+
+  /* Status */
+  #status-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:.82rem;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex-shrink:0;animation:pulse 1.5s infinite}
+  .s-ready .dot{background:var(--accent);animation:none}
+  .s-found .dot{background:var(--green);animation:none}
+  .s-done .dot{background:var(--green);animation:none}
+  .s-error .dot{background:var(--red);animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* Camera */
+  .cam-wrap{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:var(--radius);overflow:hidden;border:2px solid var(--border)}
+  #video{width:100%;height:100%;object-fit:cover;display:block}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .guide{position:absolute;inset:8%;border:2px dashed rgba(37,99,235,.4);border-radius:8px;pointer-events:none;transition:border-color .3s}
+  .guide.ok{border-color:rgba(22,163,74,.8)}
+
+  /* Botões */
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{flex:1;min-width:100px;padding:12px 14px;border-radius:var(--radius);border:none;font-size:.88rem;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:#1d4ed8}
+  .btn-primary:disabled{background:#1e3a5f;color:var(--muted);cursor:not-allowed}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* Config */
+  .cfg-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
+  .cfg-row input[type=range]{flex:1;accent-color:var(--accent);min-width:80px}
+  .cfg-row input[type=number],.cfg-row select{width:65px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.84rem;text-align:center}
+  .cfg-row select{width:80px}
+
+  /* Gabarito input */
+  .gab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:6px}
+  .q-row{display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 10px}
+  .q-num{font-size:.75rem;color:var(--muted);width:20px;flex-shrink:0}
+  .opts{display:flex;gap:3px}
+  .ob{width:27px;height:27px;border-radius:50%;border:1.5px solid var(--border);background:transparent;color:var(--muted);font-size:.75rem;font-weight:700;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center}
+  .ob:hover{border-color:var(--accent);color:var(--accent)}
+  .ob.sel{background:#2563eb22;border-color:var(--accent);color:var(--accent)}
+
+  /* Resultado */
+  #resultado{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:none}
+  #resultado.vis{display:block}
+  .nota-big{text-align:center;padding:12px 0}
+  .nota-num{font-size:3.2rem;font-weight:800;line-height:1;color:var(--green)}
+  .stats-row{display:flex;justify-content:center;gap:20px;margin:10px 0;padding:10px;background:var(--bg);border-radius:8px}
+  .stat{text-align:center}
+  .stat b{font-size:1.1rem;display:block}
+  .stat small{color:var(--muted);font-size:.72rem}
+  .q-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px;margin-top:10px}
+  .qr{border-radius:6px;padding:4px 8px;font-size:.76rem;display:flex;align-items:center;justify-content:space-between}
+  .qr.ok{background:#16a34a18;border:1px solid #16a34a44;color:#4ade80}
+  .qr.err{background:#dc262618;border:1px solid #dc262644;color:#f87171}
+  .qr.dup{background:#d9770618;border:1px solid #d9770644;color:#fbbf24}
+  .qr.vazio{background:#7d859018;border:1px solid #7d859044;color:var(--muted)}
+
+  /* Folha impressão — marcadores em flow normal (funciona no PDF) */
+  .folha-wrap{background:#fff;color:#000;border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+  .folha-top-row,.folha-bot-row{display:flex;justify-content:space-between;align-items:center;padding:4px 4px}
+  .folha-marker{width:18px;height:18px;background:#000;display:inline-block;flex-shrink:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .folha-body{padding:0 8px 6px}
+  .folha-col{display:flex;flex-direction:column;gap:3px}
+  .fhdr{font-size:7px;font-weight:700;display:flex;gap:1px;padding-left:14px}
+  .fhdr span{width:13px;text-align:center}
+  .frow{display:flex;align-items:center;gap:1px}
+  .fnum{font-size:7px;width:13px;text-align:right;margin-right:1px}
+  .bbl{width:13px;height:13px;border:1.5px solid #333;border-radius:50%;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .folha-title{text-align:center;font-size:8px;font-weight:700;color:#555;padding:2px 0 5px;border-bottom:1px solid #ddd;margin-bottom:4px}
+  .folha-footer{text-align:center;font-size:6px;color:#aaa;margin-top:6px;padding-top:4px;border-top:1px solid #eee}
+  .folha-grid-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+
+  /* Legend */
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.75rem;color:var(--muted)}
+  .li{display:flex;align-items:center;gap:4px}
+  .ld{width:8px;height:8px;border-radius:50%}
+
+  /* Aluno row */
+  .aluno-row{display:flex;gap:8px}
+  .aluno-row input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:.88rem}
+  .aluno-row input::placeholder{color:var(--muted)}
+
+  /* Section title */
+  .stitle{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
+
+  /* Toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:10px 20px;font-size:.84rem;color:var(--text);transition:transform .3s;z-index:200;white-space:nowrap}
+  #toast.show{transform:translateX(-50%) translateY(0)}
+
+  @media(max-width:380px){.gab-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<header>
+  <div class="logo">APTOS <span>OMR</span></div>
+  <div class="badge">Aluno <b id="aluno-idx">1</b></div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab active" onclick="tab('correcao')">📷 Correção</button>
+    <button class="tab"        onclick="tab('gabarito')">📋 Gabarito</button>
+    <button class="tab"        onclick="tab('folha')">🖨️ Folha</button>
+  </div>
+
+  <!-- ── CORREÇÃO ── -->
+  <div id="tab-correcao" class="panel active">
+    <div class="aluno-row">
+      <input id="aluno-nome" type="text" placeholder="Nome do aluno (opcional)">
+      <button class="btn btn-ghost" style="flex:0;min-width:auto;padding:8px 12px" onclick="limpar()">↺</button>
+    </div>
+
+    <div id="status-bar" class="s-ready">
+      <div class="dot"></div>
+      <span id="status-txt">Pronto. Ligue a câmera para começar.</span>
+    </div>
+
+    <div class="cam-wrap">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+      <div class="guide" id="guide"></div>
+    </div>
+
+    <!-- canvas oculto para processar frames -->
+    <canvas id="proc" style="display:none"></canvas>
+
+    <div class="cfg-row">
+      <span>Sensibilidade</span>
+      <input type="range" id="thr" min="40" max="220" value="110"
+             oninput="THRESH=+this.value;document.getElementById('thr-v').textContent=this.value">
+      <span id="thr-v" style="width:28px;text-align:right">110</span>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-cam"  onclick="ligarCamera()">📷 Ligar Câmera</button>
+      <button class="btn btn-ghost"   id="btn-cap"  onclick="capturar()" disabled>⚡ Capturar</button>
+    </div>
+
+    <div class="legend">
+      <div class="li"><div class="ld" style="background:#4ade80"></div>Correta</div>
+      <div class="li"><div class="ld" style="background:#f87171"></div>Errada</div>
+      <div class="li"><div class="ld" style="background:#fbbf24"></div>Dupla marcação</div>
+      <div class="li"><div class="ld" style="background:#7d8590"></div>Em branco</div>
+    </div>
+
+    <div id="resultado">
+      <div class="nota-big">
+        <div class="nota-num" id="nota-v">0.00</div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:4px">NOTA</div>
+      </div>
+      <div class="stats-row">
+        <div class="stat"><b id="s-ac" style="color:#4ade80">0</b><small>Acertos</small></div>
+        <div class="stat"><b id="s-er" style="color:#f87171">0</b><small>Erros</small></div>
+        <div class="stat"><b id="s-br" style="color:#7d8590">0</b><small>Brancos</small></div>
+        <div class="stat"><b id="s-du" style="color:#fbbf24">0</b><small>Duplas</small></div>
+      </div>
+      <div class="q-results" id="q-results"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="proximoAluno()">▶ Próximo Aluno</button>
+        <button class="btn btn-ghost"   onclick="exportCSV()">⬇ Exportar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GABARITO ── -->
+  <div id="tab-gabarito" class="panel">
+    <div class="stitle">Configurações da prova</div>
+    <div class="cfg-row">
+      <span>Questões:</span>
+      <input type="number" id="nq" min="1" max="60" value="12" onchange="renderGab()">
+      <span>Nota máx:</span>
+      <input type="number" id="nm" min="1" max="100" value="10" step="0.5">
+      <span>Alt:</span>
+      <select id="na" onchange="renderGab()">
+        <option value="4">A–D</option>
+        <option value="5" selected>A–E</option>
+      </select>
+    </div>
+    <div class="stitle">Gabarito oficial</div>
+    <div id="gab-grid" class="gab-grid"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="salvarGab()">💾 Salvar Gabarito</button>
+      <button class="btn btn-ghost"   onclick="limparGab()">🗑 Limpar</button>
+    </div>
+    <div id="gab-info" style="font-size:.78rem;color:var(--muted)"></div>
+  </div>
+
+  <!-- ── FOLHA ── -->
+  <div id="tab-folha" class="panel">
+    <p style="font-size:.82rem;color:var(--muted);line-height:1.5">
+      Imprima esta folha. Os <strong style="color:var(--text)">4 quadrados pretos nos cantos</strong>
+      são os marcadores que o sistema usa para detectar e alinhar o cartão automaticamente.
+    </p>
+    <div id="folha-container"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="imprimir()">🖨️ Imprimir</button>
+      <button class="btn btn-ghost"   onclick="gerarFolha()">↺ Atualizar</button>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ═══════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════ */
+let stream    = null;
+let scanning  = false;
+let THRESH    = 110;
+let alunoIdx  = 1;
+let resultados = [];
+
+let gabarito   = [];   // índices 0-4
+let numQ = 12, numA = 5, notaMax = 10;
+
+const LETRAS = ['A','B','C','D','E'];
+
+/* ═══════════════════════════════════════════
+   STATUS
+═══════════════════════════════════════════ */
+function setStatus(cls, msg) {
+  const b = document.getElementById('status-bar');
+  b.className = cls;
+  document.getElementById('status-txt').textContent = msg;
+}
+
+/* ═══════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════ */
+function tab(name) {
+  const names = ['correcao','gabarito','folha'];
+  document.querySelectorAll('.tab').forEach((t,i)=> t.classList.toggle('active', names[i]===name));
+  document.querySelectorAll('.panel').forEach(p=> p.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name==='folha') gerarFolha();
+}
+
+/* ═══════════════════════════════════════════
+   CÂMERA
+═══════════════════════════════════════════ */
+async function ligarCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t=>t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:960} },
+      audio:false
+    });
+    const v = document.getElementById('video');
+    v.srcObject = stream;
+    await v.play();
+    document.getElementById('btn-cap').disabled = false;
+    document.getElementById('btn-cam').textContent = '📷 Reiniciar';
+    setStatus('s-ready','Aponte a câmera para a folha de respostas.');
+    scanning = true;
+    requestAnimationFrame(loop);
+  } catch(e) {
+    setStatus('s-error','Erro câmera: '+e.message);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   LOOP DE DETECÇÃO
+═══════════════════════════════════════════ */
+function loop() {
+  if (!scanning) return;
+  const video = document.getElementById('video');
+  if (video.readyState < 2) { requestAnimationFrame(loop); return; }
+
+  const proc = document.getElementById('proc');
+  const W = video.videoWidth, H = video.videoHeight;
+  if (!W) { requestAnimationFrame(loop); return; }
+  proc.width = W; proc.height = H;
+  const ctx = proc.getContext('2d');
+  ctx.drawImage(video, 0, 0, W, H);
+
+  const corners = detectCorners(ctx, W, H);
+  drawOverlay(corners, W, H);
+
+  const guide = document.getElementById('guide');
+  if (corners) {
+    guide.classList.add('ok');
+    setStatus('s-found','✅ Folha detectada! Pressione Capturar.');
+  } else {
+    guide.classList.remove('ok');
+    if (document.getElementById('status-bar').className === 's-found')
+      setStatus('s-ready','Aponte a câmera para a folha de respostas.');
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ═══════════════════════════════════════════
+   DETECÇÃO DE CANTOS — Canvas puro
+   Estratégia: buscar regiões escuras nos 4
+   quadrantes da imagem e usar seus centros.
+═══════════════════════════════════════════ */
+function detectCorners(ctx, W, H) {
+  // Trabalhar em resolução reduzida para velocidade
+  const SCALE = 4;
+  const sw = Math.floor(W/SCALE), sh = Math.floor(H/SCALE);
+  const small = document.createElement('canvas');
+  small.width = sw; small.height = sh;
+  const sc = small.getContext('2d');
+  sc.drawImage(document.getElementById('video'), 0, 0, sw, sh);
+  const img = sc.getImageData(0, 0, sw, sh);
+  const data = img.data;
+
+  // Criar mapa de brilho binarizado
+  const bin = new Uint8Array(sw*sh);
+  for (let i=0; i<sw*sh; i++) {
+    const lum = 0.299*data[i*4]+0.587*data[i*4+1]+0.114*data[i*4+2];
+    bin[i] = lum < THRESH ? 1 : 0;
+  }
+
+  // Dividir em 4 quadrantes e encontrar o centróide da maior mancha escura
+  const quads = [
+    {x0:0,      y0:0,      x1:sw/2,  y1:sh/2},  // TL
+    {x0:sw/2,   y0:0,      x1:sw,    y1:sh/2},  // TR
+    {x0:0,      y0:sh/2,   x1:sw/2,  y1:sh},    // BL
+    {x0:sw/2,   y0:sh/2,   x1:sw,    y1:sh},    // BR
+  ];
+
+  const centers = quads.map(q => findDarkBlob(bin, sw, sh, q));
+  if (centers.some(c => c === null)) return null;
+
+  // Validar proporção (deve ser aproximadamente retangular)
+  const [tl,tr,bl,br] = centers.map(c=>({cx:c.cx*SCALE, cy:c.cy*SCALE}));
+  const dw1 = Math.abs(tr.cx - tl.cx);
+  const dw2 = Math.abs(br.cx - bl.cx);
+  const dh1 = Math.abs(bl.cy - tl.cy);
+  const dh2 = Math.abs(br.cy - tr.cy);
+  if (Math.abs(dw1-dw2)/(dw1||1) > 0.35) return null;
+  if (Math.abs(dh1-dh2)/(dh1||1) > 0.35) return null;
+  if (dw1 < W*0.25 || dh1 < H*0.20) return null; // muito pequeno
+
+  return {TL:tl, TR:tr, BL:bl, BR:br};
+}
+
+function findDarkBlob(bin, W, H, {x0,y0,x1,y1}) {
+  // Buscar maior mancha escura densa no quadrante
+  // Varre em blocos e acha o mais denso
+  const bsz = 4; // tamanho do bloco
+  let bestScore = 0, bestBx = -1, bestBy = -1;
+  for (let by=Math.floor(y0); by<Math.floor(y1)-bsz; by+=2) {
+    for (let bx=Math.floor(x0); bx<Math.floor(x1)-bsz; bx+=2) {
+      let dark=0;
+      for (let dy=0;dy<bsz;dy++) for (let dx=0;dx<bsz;dx++) {
+        const idx=(by+dy)*W+(bx+dx);
+        if (idx<bin.length && bin[idx]) dark++;
+      }
+      if (dark > bestScore) { bestScore=dark; bestBx=bx; bestBy=by; }
+    }
+  }
+  if (bestScore < bsz*bsz*0.55) return null; // não denso o suficiente
+  return { cx: bestBx+bsz/2, cy: bestBy+bsz/2 };
+}
+
+/* ═══════════════════════════════════════════
+   OVERLAY
+═══════════════════════════════════════════ */
+function drawOverlay(corners, vidW, vidH) {
+  const ov = document.getElementById('overlay');
+  const video = document.getElementById('video');
+  ov.width  = video.clientWidth;
+  ov.height = video.clientHeight;
+  const ctx = ov.getContext('2d');
+  ctx.clearRect(0,0,ov.width,ov.height);
+  if (!corners) return;
+  const sx = ov.width/vidW, sy = ov.height/vidH;
+  const pts = [corners.TL,corners.TR,corners.BR,corners.BL];
+  ctx.beginPath();
+  pts.forEach((c,i)=>{
+    const x=c.cx*sx, y=c.cy*sy;
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.closePath();
+  ctx.strokeStyle='rgba(22,163,74,.6)';
+  ctx.lineWidth=2;
+  ctx.stroke();
+  pts.forEach(c=>{
+    ctx.beginPath();
+    ctx.arc(c.cx*sx, c.cy*sy, 7, 0, Math.PI*2);
+    ctx.fillStyle='rgba(22,163,74,.85)';
+    ctx.fill();
+    ctx.strokeStyle='#fff';
+    ctx.lineWidth=2;
+    ctx.stroke();
+  });
+}
+
+/* ═══════════════════════════════════════════
+   CAPTURAR E PROCESSAR
+═══════════════════════════════════════════ */
+function capturar() {
+  if (!gabarito.some(g=>g!==null)) {
+    toast('⚠️ Configure o gabarito primeiro!');
+    tab('gabarito');
+    return;
+  }
+  const video = document.getElementById('video');
+  const proc  = document.getElementById('proc');
+  const W = video.videoWidth, H = video.videoHeight;
+  if (!W) { toast('Câmera não ativa'); return; }
+  proc.width=W; proc.height=H;
+  const ctx = proc.getContext('2d');
+  ctx.drawImage(video,0,0,W,H);
+  const corners = detectCorners(ctx, W, H);
+  if (!corners) {
+    toast('❌ Folha não detectada. Ajuste o ângulo ou a sensibilidade.');
+    return;
+  }
+  const warped = warp(proc, corners);
+  const respostas = lerBolhas(warped);
+  corrigir(respostas);
+}
+
+/* ═══════════════════════════════════════════
+   WARP — transformação de perspectiva manual
+   Implementado com bilinear sampling inverso
+═══════════════════════════════════════════ */
+function warp(srcCanvas, corners) {
+  const NW=400, NH=300;
+  const dst = document.createElement('canvas');
+  ds
